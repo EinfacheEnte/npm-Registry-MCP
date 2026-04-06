@@ -116,6 +116,12 @@ All data is fetched live from public APIs — no database, no cache, no rate lim
 
 ---
 
+## Showcase
+
+![Showcase](https://github.com/user-attachments/assets/f11c441c-6f3d-483f-b41b-ba01a49c6948)
+
+---
+
 ## Roadmap
 
 - [ ] `get_changelog` — diff between two versions
