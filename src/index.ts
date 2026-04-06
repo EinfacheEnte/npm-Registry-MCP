@@ -140,7 +140,12 @@ server.tool(
     limit: z.number().min(1).max(50).default(10).describe("How many recent versions to show"),
   },
   async ({ name, limit }) => {
-    const pkg = await fetchJSON(`${NPM_REGISTRY}/${encodeURIComponent(name)}`);
+    let pkg: any;
+    try {
+      pkg = await fetchJSON(`${NPM_REGISTRY}/${encodeURIComponent(name)}`);
+    } catch {
+      return { content: [{ type: "text", text: `Package "${name}" not found on npm.` }] };
+    }
 
     const times: Record<string, string> = pkg.time ?? {};
     const versions = Object.entries(times)
@@ -181,9 +186,12 @@ server.tool(
       .describe("Time period for download stats"),
   },
   async ({ name, period }) => {
-    const data = await fetchJSON(
-      `${NPM_API}/downloads/point/${period}/${encodeURIComponent(name)}`
-    );
+    let data: any;
+    try {
+      data = await fetchJSON(`${NPM_API}/downloads/point/${period}/${encodeURIComponent(name)}`);
+    } catch {
+      return { content: [{ type: "text", text: `Package "${name}" not found or has no download stats.` }] };
+    }
 
     return {
       content: [
@@ -206,6 +214,13 @@ server.tool(
     version: z.string().describe("Package version, e.g. '4.17.21'"),
   },
   async ({ name, version }) => {
+    // Verify the package and version exist before auditing
+    try {
+      await fetchJSON(`${NPM_REGISTRY}/${encodeURIComponent(name)}/${encodeURIComponent(version)}`);
+    } catch {
+      return { content: [{ type: "text", text: `Package "${name}@${version}" not found on npm.` }] };
+    }
+
     const body = { [name]: version };
     const res = await fetch("https://registry.npmjs.org/-/npm/v1/security/audits/quick", {
       method: "POST",
