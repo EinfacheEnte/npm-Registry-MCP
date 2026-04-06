@@ -124,7 +124,7 @@ All data is fetched live from public APIs — no database, no cache, no rate lim
 
 ## Roadmap
 
-- [ ] `get_changelog` — diff between two versions
+- [x] `get_changelog` — diff between two versions
 - [ ] Package README as an MCP resource
 - [ ] `get_dependents` — what packages depend on this one
 - [x] Publish to npm for one-line `npx` install
