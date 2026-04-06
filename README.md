@@ -24,6 +24,8 @@ When you're coding with Claude and need to pick a package, check if something is
 | `get_download_stats` | Download counts over any period (day / week / month / year) |
 | `check_vulnerabilities` | Known CVEs for a specific package version |
 | `compare_packages` | Side-by-side comparison of two packages |
+| `get_changelog` | Release notes between two versions, falls back to CHANGELOG.md |
+| `get_package_readme` | Full README for any package or specific version |
 
 ---
 
@@ -38,6 +40,7 @@ Once installed, just ask Claude naturally:
 "Are there any known vulnerabilities in axios 0.21.1?"
 "What changed in express between v4 and v5?"
 "How many downloads does react get per month?"
+"Show me the README for the sharp package"
 ```
 
 ---
@@ -79,7 +82,7 @@ npm install -g mcp-npm-registry
 
 Then use `mcp-npm-registry` as the command instead of `npx mcp-npm-registry`.
 
-### 3. Restart Claude Desktop
+### 2. Restart Claude Desktop
 
 Fully quit and reopen Claude Desktop. You should see a tools icon confirming the server is connected.
 
@@ -125,8 +128,7 @@ All data is fetched live from public APIs — no database, no cache, no rate lim
 ## Roadmap
 
 - [x] `get_changelog` — diff between two versions
-- [ ] Package README as an MCP resource
-- [ ] `get_dependents` — what packages depend on this one
+- [x] Package README as an MCP resource
 - [x] Publish to npm for one-line `npx` install
 
 ---
