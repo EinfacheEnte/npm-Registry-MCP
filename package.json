@@ -1,6 +1,6 @@
 {
   "name": "mcp-npm-registry",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "MCP server for the npm registry — search packages, check versions, vulnerabilities, download stats and more",
   "main": "dist/index.js",
   "bin": {
