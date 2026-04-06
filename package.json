@@ -1,6 +1,6 @@
 {
   "name": "mcp-npm-registry",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "MCP server for the npm registry — search packages, check versions, vulnerabilities, download stats and more",
   "main": "dist/index.js",
   "bin": {
@@ -11,8 +11,16 @@
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js"
   },
-  "files": ["dist"],
-  "keywords": ["mcp", "npm", "registry", "claude", "model-context-protocol"],
+  "files": [
+    "dist"
+  ],
+  "keywords": [
+    "mcp",
+    "npm",
+    "registry",
+    "claude",
+    "model-context-protocol"
+  ],
   "author": "",
   "license": "MIT",
   "dependencies": {
