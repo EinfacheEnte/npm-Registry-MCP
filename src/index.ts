@@ -440,6 +440,156 @@ server.tool(
   }
 );
 
+// ─── Tool: get_dependents ────────────────────────────────────────────────────
+
+server.tool(
+  "get_dependents",
+  "Find packages that depend on a given npm package, ranked by popularity. Shows total dependent count and top dependents.",
+  {
+    name: z.string().describe("Package name, e.g. 'lodash'"),
+    limit: z.number().min(1).max(20).default(10).describe("Number of top dependents to show"),
+  },
+  async ({ name, limit }) => {
+    // Verify package exists first
+    let pkg: any;
+    try {
+      pkg = await fetchJSON(`${NPM_REGISTRY}/${encodeURIComponent(name)}`);
+    } catch {
+      return { content: [{ type: "text", text: `Package "${name}" not found on npm.` }] };
+    }
+
+    const latest = pkg["dist-tags"]?.latest;
+
+    // npms.io provides dependent count and a ranked list
+    let npmsData: any;
+    try {
+      npmsData = await fetchJSON(`${NPMS_API}/package/${encodeURIComponent(name)}`);
+    } catch {
+      npmsData = null;
+    }
+
+    // Search npm for packages that depend on this one
+    // npm search supports "dependencies:package-name" syntax
+    let dependents: any[] = [];
+    try {
+      const searchData = await fetchJSON(
+        `${NPM_REGISTRY}/-/v1/search?text=dependencies:${encodeURIComponent(name)}&size=${limit}`
+      );
+      dependents = searchData.objects ?? [];
+    } catch {
+      dependents = [];
+    }
+
+    const totalStr = npmsData?.collected?.npm?.dependentsCount != null
+      ? `**${(npmsData.collected.npm.dependentsCount as number).toLocaleString()}** packages depend on **${name}**`
+      : `Packages that depend on **${name}**`;
+
+    if (!dependents.length) {
+      return {
+        content: [{ type: "text", text: `${totalStr} (v${latest}).\n\nNo dependent packages found in search results.` }],
+      };
+    }
+
+    const lines = dependents.slice(0, limit).map((obj: any) => {
+      const p = obj.package;
+      const dl = obj.score?.detail?.popularity;
+      return [
+        `📦 **${p.name}** v${p.version}`,
+        `   ${p.description ?? "No description"}`,
+        `   🔗 https://www.npmjs.com/package/${p.name}`,
+        dl != null ? `   Popularity score: ${(dl * 100).toFixed(0)}%` : "",
+      ].filter(Boolean).join("\n");
+    });
+
+    return {
+      content: [{
+        type: "text",
+        text: `${totalStr} (v${latest}).\n\nTop ${dependents.length} dependents by popularity:\n\n${lines.join("\n\n")}`,
+      }],
+    };
+  }
+);
+
+// ─── Tool: get_package_readme ────────────────────────────────────────────────
+
+server.tool(
+  "get_package_readme",
+  "Fetch the full README of an npm package. Useful for understanding how to install, configure and use a package.",
+  {
+    name: z.string().describe("Package name, e.g. 'express' or '@types/node'"),
+    version: z.string().optional().describe("Specific version to fetch README for. Defaults to latest."),
+  },
+  async ({ name, version }) => {
+    let pkg: any;
+    try {
+      pkg = await fetchJSON(`${NPM_REGISTRY}/${encodeURIComponent(name)}`);
+    } catch {
+      return { content: [{ type: "text", text: `Package "${name}" not found on npm.` }] };
+    }
+
+    const resolvedVersion = version ?? pkg["dist-tags"]?.latest;
+
+    if (!resolvedVersion) {
+      return { content: [{ type: "text", text: `Could not determine version for "${name}".` }] };
+    }
+
+    const versionData = pkg.versions?.[resolvedVersion];
+    if (!versionData) {
+      return { content: [{ type: "text", text: `Version "${resolvedVersion}" not found for "${name}".` }] };
+    }
+
+    const MAX_CHARS = 12000;
+    const header = `# ${name}@${resolvedVersion}\n📦 https://www.npmjs.com/package/${name}\n\n---\n\n`;
+
+    const trim = (text: string) =>
+      text.length > MAX_CHARS
+        ? text.slice(0, MAX_CHARS) + "\n\n*(README truncated — see full docs on npmjs.com)*"
+        : text;
+
+    // 1. Try readme stored directly in registry document
+    const registryReadme: string = pkg.readme ?? "";
+    if (registryReadme && registryReadme.trim() !== "ERROR: No README data found!") {
+      return { content: [{ type: "text", text: header + trim(registryReadme) }] };
+    }
+
+    // 2. Fall back to fetching README from GitHub
+    const repoUrl: string = pkg.repository?.url ?? versionData.repository?.url ?? "";
+    const gh = extractGitHubRepo(repoUrl);
+
+    if (gh) {
+      const { owner, repo } = gh;
+      for (const branch of ["main", "master"]) {
+        for (const filename of ["README.md", "readme.md", "Readme.md"]) {
+          try {
+            const res = await fetch(`https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${filename}`);
+            if (!res.ok) continue;
+            let text = await res.text();
+            if (!text.trim()) continue;
+
+            // Handle monorepos where root README just points to a sub-path
+            if (text.trim().endsWith(".md") && !text.includes("\n")) {
+              const subPath = text.trim();
+              const subRes = await fetch(`https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${subPath}`);
+              if (subRes.ok) text = await subRes.text();
+            }
+
+            if (text.trim()) {
+              return { content: [{ type: "text", text: header + trim(text) }] };
+            }
+          } catch { continue; }
+        }
+      }
+    }
+
+    return {
+      content: [{
+        type: "text",
+        text: `No README found for **${name}@${resolvedVersion}**.\n\nSee the package page: https://www.npmjs.com/package/${name}`,
+      }],
+    };
+  }
+);
+
 // ─── Start ───────────────────────────────────────────────────────────────────
 
 async function main() {
