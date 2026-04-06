@@ -36,6 +36,9 @@ server.tool(
     limit: z.number().min(1).max(20).default(5).describe("Number of results to return (1-20)"),
   },
   async ({ query, limit }) => {
+    if (!query.trim()) {
+      return { content: [{ type: "text", text: "Please provide a search query." }] };
+    }
     const data = await fetchJSON(
       `${NPM_REGISTRY}/-/v1/search?text=${encodeURIComponent(query)}&size=${limit}`
     );
