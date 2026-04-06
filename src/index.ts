@@ -311,6 +311,19 @@ function extractGitHubRepo(repoUrl: string): { owner: string; repo: string } | n
   return { owner: match[1], repo: match[2] };
 }
 
+// Compare two semver strings numerically. Returns negative if a < b, positive if a > b, 0 if equal.
+// Pads missing parts with 0 so "5.0" == "5.0.0"
+function semverCompare(a: string, b: string): number {
+  const parse = (v: string) => v.replace(/^v/, "").split(".").map((n) => parseInt(n, 10) || 0);
+  const [aParts, bParts] = [parse(a), parse(b)];
+  const len = Math.max(aParts.length, bParts.length);
+  for (let i = 0; i < len; i++) {
+    const diff = (aParts[i] ?? 0) - (bParts[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
 server.tool(
   "get_changelog",
   "Get release notes for an npm package. Optionally filter between two versions. Falls back to CHANGELOG.md if no GitHub releases exist.",
@@ -322,7 +335,13 @@ server.tool(
   },
   async ({ name, from_version, to_version, limit }) => {
     // Step 1: get repo URL from npm
-    const pkg = await fetchJSON(`${NPM_REGISTRY}/${encodeURIComponent(name)}`);
+    let pkg: any;
+    try {
+      pkg = await fetchJSON(`${NPM_REGISTRY}/${encodeURIComponent(name)}`);
+    } catch {
+      return { content: [{ type: "text", text: `Package "${name}" not found on npm.` }] };
+    }
+
     const repoUrl: string = pkg.repository?.url ?? "";
     const gh = extractGitHubRepo(repoUrl);
 
@@ -350,43 +369,37 @@ server.tool(
       releases = await res.json();
     } catch {
       // Step 3: fallback to CHANGELOG.md
-      try {
-        const raw = await fetch(`https://raw.githubusercontent.com/${owner}/${repo}/main/CHANGELOG.md`);
-        if (!raw.ok) throw new Error();
-        const text = await raw.text();
-        const preview = text.split("\n").slice(0, 60).join("\n");
-        return {
-          content: [{ type: "text", text: `No GitHub releases found. Here is the CHANGELOG.md for **${name}**:\n\n${preview}${text.split("\n").length > 60 ? "\n\n*(truncated — see full file on GitHub)*" : ""}` }],
-        };
-      } catch {
-        return { content: [{ type: "text", text: `Could not fetch changelog for **${name}**. No GitHub releases or CHANGELOG.md found.` }] };
+      for (const branch of ["main", "master"]) {
+        try {
+          const raw = await fetch(`https://raw.githubusercontent.com/${owner}/${repo}/${branch}/CHANGELOG.md`);
+          if (!raw.ok) continue;
+          const text = await raw.text();
+          const lines = text.split("\n");
+          const preview = lines.slice(0, 60).join("\n");
+          return {
+            content: [{ type: "text", text: `No GitHub releases found. Here is the CHANGELOG.md for **${name}**:\n\n${preview}${lines.length > 60 ? "\n\n*(truncated — see full file on GitHub)*" : ""}` }],
+          };
+        } catch { continue; }
       }
+      return { content: [{ type: "text", text: `Could not fetch changelog for **${name}**. No GitHub releases or CHANGELOG.md found.` }] };
     }
 
     if (!releases.length) {
       return { content: [{ type: "text", text: `**${name}** has no GitHub releases published yet.` }] };
     }
 
-    // Step 4: filter by version range if provided
-    const normalise = (v: string) => v.replace(/^v/, "");
-
+    // Step 4: filter by version range using semver comparison
     if (from_version || to_version) {
-      const from = from_version ? normalise(from_version) : null;
-      const to = to_version ? normalise(to_version) : null;
-
-      // Keep releases whose tag falls within [from (exclusive) .. to (inclusive)]
-      const allVersions = releases.map((r: any) => normalise(r.tag_name));
-
       releases = releases.filter((r: any) => {
-        const v = normalise(r.tag_name);
-        const afterFrom = from ? allVersions.indexOf(v) < allVersions.indexOf(from) : true;
-        const beforeTo = to ? allVersions.indexOf(v) >= allVersions.indexOf(to) : true;
+        const v = r.tag_name;
+        const afterFrom = from_version ? semverCompare(v, from_version) > 0 : true;
+        const beforeTo = to_version ? semverCompare(v, to_version) <= 0 : true;
         return afterFrom && beforeTo;
       });
 
       if (!releases.length) {
         return {
-          content: [{ type: "text", text: `No releases found for **${name}** between v${from_version} and v${to_version}.` }],
+          content: [{ type: "text", text: `No releases found for **${name}**${from_version ? ` after v${from_version}` : ""}${to_version ? ` up to v${to_version}` : ""}.` }],
         };
       }
     } else {
@@ -403,7 +416,7 @@ server.tool(
     });
 
     const header = from_version || to_version
-      ? `Changelog for **${name}**${from_version ? ` from v${from_version}` : ""}${to_version ? ` to v${to_version}` : ""}:`
+      ? `Changelog for **${name}**${from_version ? ` after v${from_version}` : ""}${to_version ? ` up to v${to_version}` : ""}:`
       : `Last ${releases.length} release${releases.length === 1 ? "" : "s"} for **${name}**:`;
 
     return {
