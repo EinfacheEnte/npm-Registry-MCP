@@ -49,34 +49,35 @@ Once installed, just ask Claude naturally:
 - [Node.js](https://nodejs.org) v18 or higher
 - [Claude Desktop](https://claude.ai/download)
 
-### 1. Clone and build
-
-```bash
-git clone https://github.com/EinfacheEnte/npm-Registry-MCP.git
-cd npm-Registry-MCP
-npm install
-npm run build
-```
-
-### 2. Add to Claude Desktop config
+### 1. Add to Claude Desktop config
 
 Open your Claude Desktop config file:
 
 - **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
 - **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
 
-Add the following (replace the path with wherever you cloned the repo):
-
 ```json
 {
   "mcpServers": {
     "npm-registry": {
-      "command": "node",
-      "args": ["/absolute/path/to/npm-Registry-MCP/dist/index.js"]
+      "command": "npx",
+      "args": ["mcp-npm-registry"]
     }
   }
 }
 ```
+
+That's it — no cloning, no building. `npx` handles everything automatically.
+
+### Manual install (optional)
+
+If you prefer a global install:
+
+```bash
+npm install -g mcp-npm-registry
+```
+
+Then use `mcp-npm-registry` as the command instead of `npx mcp-npm-registry`.
 
 ### 3. Restart Claude Desktop
 
