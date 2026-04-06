@@ -303,6 +303,115 @@ server.tool(
   }
 );
 
+// ─── Tool: get_changelog ─────────────────────────────────────────────────────
+
+function extractGitHubRepo(repoUrl: string): { owner: string; repo: string } | null {
+  const match = repoUrl.match(/github\.com[/:]([\w.-]+)\/([\w.-]+?)(?:\.git)?(?:[/#]|$)/);
+  if (!match) return null;
+  return { owner: match[1], repo: match[2] };
+}
+
+server.tool(
+  "get_changelog",
+  "Get release notes for an npm package. Optionally filter between two versions. Falls back to CHANGELOG.md if no GitHub releases exist.",
+  {
+    name: z.string().describe("Package name, e.g. 'express'"),
+    from_version: z.string().optional().describe("Start version (exclusive), e.g. '4.18.0'"),
+    to_version: z.string().optional().describe("End version (inclusive), e.g. '5.0.0'"),
+    limit: z.number().min(1).max(20).default(5).describe("Max releases to show when no version range is given"),
+  },
+  async ({ name, from_version, to_version, limit }) => {
+    // Step 1: get repo URL from npm
+    const pkg = await fetchJSON(`${NPM_REGISTRY}/${encodeURIComponent(name)}`);
+    const repoUrl: string = pkg.repository?.url ?? "";
+    const gh = extractGitHubRepo(repoUrl);
+
+    if (!gh) {
+      return {
+        content: [{
+          type: "text",
+          text: `**${name}** does not have a GitHub repository linked on npm — cannot fetch changelog.\nRepository: ${repoUrl || "not set"}`,
+        }],
+      };
+    }
+
+    const { owner, repo } = gh;
+    const ghBase = `https://api.github.com/repos/${owner}/${repo}`;
+    const headers = { "User-Agent": "mcp-npm-registry", "Accept": "application/vnd.github+json" };
+
+    // Step 2: fetch releases
+    let releases: any[] = [];
+    try {
+      const res = await fetch(`${ghBase}/releases?per_page=50`, { headers });
+      if (res.status === 403) {
+        return { content: [{ type: "text", text: `GitHub API rate limit reached. Try again in a few minutes.` }] };
+      }
+      if (!res.ok) throw new Error(`${res.status}`);
+      releases = await res.json();
+    } catch {
+      // Step 3: fallback to CHANGELOG.md
+      try {
+        const raw = await fetch(`https://raw.githubusercontent.com/${owner}/${repo}/main/CHANGELOG.md`);
+        if (!raw.ok) throw new Error();
+        const text = await raw.text();
+        const preview = text.split("\n").slice(0, 60).join("\n");
+        return {
+          content: [{ type: "text", text: `No GitHub releases found. Here is the CHANGELOG.md for **${name}**:\n\n${preview}${text.split("\n").length > 60 ? "\n\n*(truncated — see full file on GitHub)*" : ""}` }],
+        };
+      } catch {
+        return { content: [{ type: "text", text: `Could not fetch changelog for **${name}**. No GitHub releases or CHANGELOG.md found.` }] };
+      }
+    }
+
+    if (!releases.length) {
+      return { content: [{ type: "text", text: `**${name}** has no GitHub releases published yet.` }] };
+    }
+
+    // Step 4: filter by version range if provided
+    const normalise = (v: string) => v.replace(/^v/, "");
+
+    if (from_version || to_version) {
+      const from = from_version ? normalise(from_version) : null;
+      const to = to_version ? normalise(to_version) : null;
+
+      // Keep releases whose tag falls within [from (exclusive) .. to (inclusive)]
+      const allVersions = releases.map((r: any) => normalise(r.tag_name));
+
+      releases = releases.filter((r: any) => {
+        const v = normalise(r.tag_name);
+        const afterFrom = from ? allVersions.indexOf(v) < allVersions.indexOf(from) : true;
+        const beforeTo = to ? allVersions.indexOf(v) >= allVersions.indexOf(to) : true;
+        return afterFrom && beforeTo;
+      });
+
+      if (!releases.length) {
+        return {
+          content: [{ type: "text", text: `No releases found for **${name}** between v${from_version} and v${to_version}.` }],
+        };
+      }
+    } else {
+      releases = releases.slice(0, limit);
+    }
+
+    // Step 5: format output
+    const formatted = releases.map((r: any) => {
+      const date = new Date(r.published_at).toLocaleDateString();
+      const body = r.body?.trim()
+        ? r.body.trim().split("\n").slice(0, 20).join("\n") + (r.body.trim().split("\n").length > 20 ? "\n*(truncated)*" : "")
+        : "_No release notes provided._";
+      return `### ${r.tag_name} — ${date}\n${body}`;
+    });
+
+    const header = from_version || to_version
+      ? `Changelog for **${name}**${from_version ? ` from v${from_version}` : ""}${to_version ? ` to v${to_version}` : ""}:`
+      : `Last ${releases.length} release${releases.length === 1 ? "" : "s"} for **${name}**:`;
+
+    return {
+      content: [{ type: "text", text: `${header}\n\n${formatted.join("\n\n---\n\n")}` }],
+    };
+  }
+);
+
 // ─── Start ───────────────────────────────────────────────────────────────────
 
 async function main() {
