@@ -127,7 +127,7 @@ All data is fetched live from public APIs — no database, no cache, no rate lim
 - [ ] `get_changelog` — diff between two versions
 - [ ] Package README as an MCP resource
 - [ ] `get_dependents` — what packages depend on this one
-- [ ] Publish to npm for one-line `npx` install
+- [x] Publish to npm for one-line `npx` install
 
 ---
 
